@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Deep Drill</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#060610;font-family:'Courier New',monospace;color:#c8c8d8;overflow:hidden;user-select:none;}
+#wrap{display:flex;gap:8px;padding:8px;height:100vh;align-items:center;justify-content:center;}
+#gamearea{display:flex;flex-direction:column;gap:5px;flex-shrink:0;}
+#canvas{display:block;border:2px solid #1a1a30;border-radius:4px;image-rendering:pixelated;}
+#hint{font-size:9px;color:#1a1a30;text-align:center;line-height:1.8;}
+#right{display:flex;flex-direction:column;gap:6px;width:178px;overflow-y:auto;max-height:calc(100vh - 16px);}
+#shop-col{display:none;flex-direction:column;position:fixed;top:8px;right:8px;width:220px;
+  overflow-y:auto;max-height:calc(100vh - 16px);z-index:100;}
+.panel{background:#0d0d1c;border:1px solid #181838;border-radius:7px;padding:9px 11px;}
+.slabel{font-size:9px;color:#1e1e44;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;}
+.ore-row{display:flex;justify-content:space-between;align-items:center;font-size:10px;
+  margin-bottom:2px;padding:2px 5px;background:rgba(255,255,255,.025);border-radius:3px;}
+.mat-row{display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;}
+.pip{display:inline-block;height:4px;border-radius:2px;margin-right:2px;}
+.bar-bg{flex:1;height:6px;background:#0a0a1a;border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;transition:width .08s,background .3s;}
+.btn-sell{background:#061410;border:1px solid #1a3a22;color:#44bb77;padding:6px 0;
+  border-radius:5px;width:100%;font-size:11px;cursor:pointer;font-family:'Courier New',monospace;}
+.btn-sell:hover{border-color:#2a5a38;}
+.btn-buy{background:#08081c;border:1px solid #16163a;border-radius:4px;
+  padding:4px 0;color:#1e1e40;font-size:11px;cursor:pointer;width:100%;font-family:'Courier New',monospace;}
+.btn-buy.can{border-color:#2a2266;color:#8877ff;} .btn-buy.can:hover{background:#0e0e28;}
+.btn-craft{background:#04120e;border:1px solid #091a14;border-radius:4px;
+  padding:5px 0;color:#0a1a12;font-size:11px;cursor:pointer;width:100%;font-family:'Courier New',monospace;}
+.btn-craft.can{border-color:#1a4a3a;color:#00ffcc;}
+.upg-block{margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #0d0d20;}
+::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:#060610;}
+::-webkit-scrollbar-thumb{background:#181838;border-radius:2px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="gamearea">
+    <canvas id="canvas"></canvas>
+    <div id="hint">
+      WASD/Arrows — Move &nbsp;|&nbsp;
+      <b style="color:#fff">SPACE</b> — Hold to mine faced block &nbsp;|&nbsp;
+      <span style="color:#22aa44">REST</span> regen &nbsp;|&nbsp;
+      <span style="color:#2299cc">SELL</span> + <b style="color:#aaa">F</b> sell &nbsp;|&nbsp;
+      <b style="color:#ffaa00">E</b> shop &nbsp;|&nbsp;
+      <b style="color:#aaa">R</b> respawn
+    </div>
+  </div>
+
+  <div id="right">
+    <!-- Vitals -->
+    <div class="panel">
+      <div id="hp-row" style="display:flex;gap:3px;margin-bottom:6px;"></div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+        <span id="e-icon" style="font-size:10px;color:#5599ff;min-width:14px;">⚡</span>
+        <div class="bar-bg"><div id="e-bar" class="bar-fill" style="width:100%;background:#2266ff;"></div></div>
+        <span id="e-lbl" style="font-size:9px;color:#2a2a44;min-width:50px;">100/100</span>
+      </div>
+      <div id="money-lbl" style="font-size:12px;color:#ffd700;margin-bottom:2px;">💰 $0</div>
+      <div id="stats-row" style="font-size:9px;line-height:1.9;"></div>
+      <div id="zone-msg" style="font-size:10px;margin-top:3px;display:none;"></div>
+    </div>
+
+    <!-- Inventory -->
+    <div class="panel">
+      <div class="slabel">Inventory</div>
+      <div id="inv-list"><div style="color:#0f0f28;font-size:10px;font-style:italic;">Nothing yet...</div></div>
+      <div id="inv-footer" style="display:none;margin-top:4px;">
+        <div style="border-top:1px solid #0c0c22;padding-top:4px;display:flex;
+          justify-content:space-between;font-size:10px;margin-bottom:4px;">
+          <span style="color:#223">Total</span>
+          <span id="inv-total" style="color:#ffd700;"></span>
+        </div>
+        <button class="btn-sell" id="sell-btn" onclick="sellAll()">💲 Sell All</button>
+      </div>
+    </div>
+
+    <!-- Drill materials -->
+    <div class="panel">
+      <div class="slabel">⛏ Drill Materials</div>
+      <div id="mat-list"></div>
+    </div>
+  </div>
+
+  <!-- SHOP — shown when standing on shop tile -->
+  <div id="shop-col" class="panel">
+    <div style="color:#ffd700;font-size:13px;font-weight:bold;margin-bottom:10px;">🛒 Upgrade Shop</div>
+    <div id="shop-upgs"></div>
+    <div id="drill-craft"></div>
+    <div style="margin-top:12px;border-top:1px solid #0c0c20;padding-top:9px;">
+      <div class="slabel">Market Prices</div>
+      <div id="price-list"></div>
+    </div>
+    <div style="margin-top:8px;font-size:9px;color:#1a2230;text-align:center;padding:5px;
+      background:#060610;border-radius:4px;border:1px solid #0d0d1c;">
+      Walk away from shop to close
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Tile IDs ─────────────────────────────────────────────────────────────────
+const AIR=0,GRASS=1,DIRT=2,STONE=3;
+const COAL=4,COPPER=5,LAPIS=6,IRON=7,REDSTONE=8,
+      SILVER=9,GOLD=10,AMETHYST=11,EMERALD=12,RUBY=13,DIAMOND=14;
+const REST=20,SHOP=21,SELL=22,LAVA=23,BOSSFLOOR=24;
+const BOSS_ROOM_Y=39; // y where boss arena starts
+
+// ─── Ore Definitions ──────────────────────────────────────────────────────────
+const ORES={
+  [COAL]:    {n:"Coal",     c:"#252525",hi:"#686868",v:2,  w:1,e:2.5,minY:2, p:.09,  mat:null},
+  [COPPER]:  {n:"Copper",   c:"#7a3a10",hi:"#e88040",v:5,  w:1,e:3,  minY:3, p:.07,  mat:null},
+  [LAPIS]:   {n:"Lapis",    c:"#142860",hi:"#4488ff",v:10, w:2,e:5,  minY:5, p:.055, mat:null},
+  [IRON]:    {n:"Iron",     c:"#7a4828",hi:"#d06040",v:8,  w:2,e:6,  minY:5, p:.06,  mat:"iron"},
+  [REDSTONE]:{n:"Redstone", c:"#500808",hi:"#ff3322",v:15, w:2,e:7,  minY:8, p:.045, mat:null},
+  [SILVER]:  {n:"Silver",   c:"#3a5060",hi:"#c8d8e8",v:22, w:3,e:9,  minY:10,p:.035, mat:null},
+  [GOLD]:    {n:"Gold",     c:"#886000",hi:"#ffd700",v:40, w:3,e:12, minY:8, p:.055, mat:"gold"},
+  [AMETHYST]:{n:"Amethyst", c:"#3a1850",hi:"#cc88ff",v:55, w:3,e:14, minY:16,p:.022, mat:null},
+  [EMERALD]: {n:"Emerald",  c:"#084020",hi:"#22ff88",v:85, w:4,e:18, minY:20,p:.015, mat:"emerald"},
+  [RUBY]:    {n:"Ruby",     c:"#501028",hi:"#ff4488",v:120,w:5,e:24, minY:25,p:.010, mat:null},
+  [DIAMOND]: {n:"Diamond",  c:"#0a2858",hi:"#88e8ff",v:200,w:6,e:30, minY:20,p:.018, mat:"diamond"},
+};
+
+const DRILL_NAMES=["Wooden","Bronze","Steel","Golden","Emerald","Diamond"];
+const DRILL_REQS=[null,{iron:3},{iron:4,gold:1},{gold:3,emerald:1},{emerald:2,diamond:1}];
+const TS=26,COLS=60,ROWS=48,SURF=5,VW=22,VH=18;
+
+// ─── World Gen ────────────────────────────────────────────────────────────────
+function makeMap(){
+  const m=[];
+  for(let y=0;y<ROWS;y++) m.push(new Int16Array(COLS));
+  for(let x=0;x<COLS;x++){
+    m[0][x]=m[1][x]=m[2][x]=m[3][x]=AIR;
+    m[4][x]=GRASS;
+  }
+  const cx=Math.floor(COLS/2);
+  // REST zone — far left
+  for(let x=4;x<=9;x++){m[2][x]=REST;m[3][x]=REST;}
+  // SELL counter — center-left
+  for(let x=cx-6;x<=cx-2;x++){m[2][x]=SELL;m[3][x]=SELL;}
+  // SHOP — center-right
+  for(let x=cx+2;x<=cx+8;x++){m[2][x]=SHOP;m[3][x]=SHOP;}
+
+  for(let y=SURF;y<ROWS;y++){
+    const depth=y-SURF;
+    for(let x=0;x<COLS;x++){
+      const r=Math.random();
+      m[y][x]=depth<5?(r<.45?DIRT:STONE):depth<12?(r<.2?DIRT:STONE):STONE;
+      const roll=Math.random();
+      const order=[DIAMOND,RUBY,EMERALD,AMETHYST,GOLD,SILVER,REDSTONE,IRON,LAPIS,COPPER,COAL];
+      for(const t of order){
+        const o=ORES[t];
+        if(depth>=o.minY&&roll<o.p){m[y][x]=t;break;}
+      }
+    }
+  }
+  // Boss arena at the bottom
+  for(let y=BOSS_ROOM_Y;y<ROWS;y++)
+    for(let x=2;x<COLS-2;x++)
+      m[y][x]= y===ROWS-1 ? LAVA : BOSSFLOOR;
+  // Runic pillars inside arena
+  for(let x=8;x<COLS-8;x+=10)
+    for(let yy=BOSS_ROOM_Y+1;yy<=BOSS_ROOM_Y+3;yy++)
+      m[yy][x]=STONE;
+
+  return m;
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let map=makeMap();
+let px=Math.floor(COLS/2),py=3;
+let energy=100,maxEnergy=100,hp=3,maxHp=3,money=0;
+let inv={},weight=0;
+let drillMats={iron:0,gold:0,emerald:0,diamond:0};
+let upgrades={drillLv:0,bagLv:0,capLv:0,regenLv:0,lanternLv:0};
+let dead=false,resting=false,nearSell=false,nearShop=false;
+let msgs=[],particles=[];
+let moveCd=0,tick=0,shopOpen=false;
+let faceDx=0,faceDy=1;
+let mineProgress=0,mineMax=1;
+let mineX=-1,mineY=-1;
+let playerAttackCd=0;
+let won=false;
+// Boss
+let boss={
+  x:Math.floor(COLS/2), y:BOSS_ROOM_Y+4,
+  hp:60, maxHp:60,
+  alive:true, spawned:false,
+  moveCd:0, attackCd:0,
+  anim:0, enraged:false,
+  dx:1, dy:0,
+};
+const keys={};
+
+function weightCap(){return 10+upgrades.bagLv*5;}
+function visionR(){return 1+upgrades.lanternLv*2;}
+function addMsg(t,c="#eee"){msgs=[{text:t,color:c,t:200},...msgs].slice(0,6);}
+function spawnParticles(x,y,color,n=5){
+  for(let i=0;i<n;i++){
+    const a=(Math.PI*2*i/n)+Math.random()*.7,s=.6+Math.random()*1.5;
+    particles.push({x:x*TS+TS/2,y:y*TS+TS/2,vx:Math.cos(a)*s,vy:Math.sin(a)*s,color,life:35+Math.random()*20,max:55});
+  }
+}
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+
+function resize(){
+  const sw=document.getElementById('shop-col').style.display!=='none'?210:0;
+  const mw=window.innerWidth-186-sw-28;
+  const mh=window.innerHeight-42;
+  const s=Math.max(1,Math.min(Math.floor(mw/(VW*TS)),Math.floor(mh/(VH*TS))));
+  canvas.width=VW*TS*s;canvas.height=VH*TS*s;
+  canvas.style.width=canvas.width+'px';canvas.style.height=canvas.height+'px';
+  ctx.setTransform(s,0,0,s,0,0);
+}
+resize();
+window.addEventListener('resize',resize);
+
+// ─── Tile Colors ──────────────────────────────────────────────────────────────
+const TCOL={[AIR]:"#080e1a",[GRASS]:"#1e5c14",[DIRT]:"#5c3210",[STONE]:"#2e2e38",
+  [REST]:"#0a2210",[SHOP]:"#2a1004",[SELL]:"#042228",
+  [LAVA]:"#8a1800",[BOSSFLOOR]:"#1a0808"};
+for(const[k,v] of Object.entries(ORES)) TCOL[k]=v.c;
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw(){
+  const camX=Math.max(0,Math.min(COLS-VW,px-Math.floor(VW/2)));
+  const camY=Math.max(0,Math.min(ROWS-VH,py-Math.floor(VH/2)));
+
+  ctx.fillStyle="#080e18";ctx.fillRect(0,0,VW*TS,VH*TS);
+
+  for(let ty=0;ty<VH;ty++){
+    for(let tx=0;tx<VW;tx++){
+      const mx=camX+tx,my=camY+ty;
+      if(mx<0||mx>=COLS||my<0||my>=ROWS) continue;
+      const t=map[my][mx];
+
+      if(my<SURF){
+        const b=my/SURF;
+        ctx.fillStyle=`rgb(${Math.round(10+b*10)},${Math.round(18+b*22)},${Math.round(38+b*32)})`;
+      } else ctx.fillStyle=TCOL[t]||"#222";
+      ctx.fillRect(tx*TS,ty*TS,TS,TS);
+
+      if(ORES[t]){
+        const o=ORES[t];
+        // Only show ore details if underground AND within vision radius
+        const inVision = py>=SURF && Math.abs(mx-px)<=visionR() && Math.abs(my-py)<=visionR();
+        if(inVision){
+          const g=ctx.createRadialGradient(tx*TS+TS/2,ty*TS+TS/2,1,tx*TS+TS/2,ty*TS+TS/2,TS/2);
+          g.addColorStop(0,o.hi+"44");g.addColorStop(1,"transparent");
+          ctx.fillStyle=g;ctx.fillRect(tx*TS,ty*TS,TS,TS);
+          ctx.fillStyle=o.hi;
+          ctx.beginPath();ctx.arc(tx*TS+7,ty*TS+8,2.5,0,Math.PI*2);ctx.fill();
+          ctx.beginPath();ctx.arc(tx*TS+TS-7,ty*TS+TS-8,2,0,Math.PI*2);ctx.fill();
+          ctx.fillStyle="rgba(0,0,0,.4)";ctx.fillRect(tx*TS+1,ty*TS+TS-9,TS-2,8);
+          ctx.fillStyle=o.hi;ctx.font="5.5px monospace";
+          ctx.fillText(o.n.slice(0,3).toUpperCase(),tx*TS+2,ty*TS+TS-2);
+        }
+      }
+
+      if(t===REST){
+        ctx.fillStyle="rgba(0,255,80,.08)";ctx.fillRect(tx*TS,ty*TS,TS,TS);
+        ctx.fillStyle="#22ff66";ctx.font="bold 12px monospace";
+        ctx.fillText("Z",tx*TS+8,ty*TS+16);
+      }
+      if(t===SELL){
+        ctx.fillStyle="rgba(0,180,255,.07)";ctx.fillRect(tx*TS,ty*TS,TS,TS);
+        ctx.fillStyle="#22aaff";ctx.font="bold 11px monospace";
+        ctx.fillText("$",tx*TS+8,ty*TS+16);
+      }
+      if(t===SHOP){
+        ctx.fillStyle="rgba(255,160,0,.07)";ctx.fillRect(tx*TS,ty*TS,TS,TS);
+        ctx.fillStyle="#ffaa00";ctx.font="11px monospace";
+        ctx.fillText("🛒",tx*TS+3,ty*TS+16);
+      }
+
+      if(my>=SURF){
+        ctx.strokeStyle="rgba(0,0,0,.18)";ctx.lineWidth=.4;
+        ctx.strokeRect(tx*TS,ty*TS,TS,TS);
+      }
+    }
+  }
+
+  // Particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life/p.max;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x-camX*TS,p.y-camY*TS,3*(p.life/p.max),0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // Player
+  const pdx=(px-camX)*TS,pdy=(py-camY)*TS;
+  const pcol=resting?"#22dd66":energy<20?"#ff3322":"#ff8833";
+  ctx.shadowColor="#ffe066";ctx.shadowBlur=12;
+  ctx.fillStyle="#ffe066";ctx.beginPath();ctx.arc(pdx+TS/2,pdy+5,3.5,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle="#3a3d4a";ctx.fillRect(pdx+4,pdy+7,TS-8,TS-8);
+  ctx.fillStyle=pcol;ctx.fillRect(pdx+4,pdy+2,TS-8,8);
+  ctx.fillStyle="rgba(140,220,255,.8)";ctx.fillRect(pdx+6,pdy+4,TS-12,5);
+  ctx.fillStyle="#1a1a1a";
+  ctx.fillRect(pdx+5,pdy+TS-5,5,5);ctx.fillRect(pdx+TS-10,pdy+TS-5,5,5);
+
+  // Player facing indicator (small arrow)
+  ctx.fillStyle="rgba(255,255,255,0.5)";
+  const ax=pdx+TS/2+faceDx*10, ay=pdy+TS/2+faceDy*10;
+  ctx.beginPath();ctx.arc(ax,ay,2,0,Math.PI*2);ctx.fill();
+
+  // Mining progress bar on targeted block
+  if(mineX>=0&&mineY>=0&&mineProgress>0){
+    const bsx=(mineX-camX)*TS, bsy=(mineY-camY)*TS;
+    const pct=mineProgress/mineMax;
+    const bt=map[mineY]?.[mineX];
+    const barCol=ORES[bt]?ORES[bt].hi:"#ffcc44";
+    // crack overlay
+    ctx.fillStyle=`rgba(0,0,0,${0.5*(1-pct)})`;
+    ctx.fillRect(bsx,bsy,TS,TS);
+    // bar background
+    ctx.fillStyle="rgba(0,0,0,.7)";ctx.fillRect(bsx+2,bsy+TS-8,TS-4,6);
+    // bar fill
+    ctx.fillStyle=barCol;ctx.fillRect(bsx+2,bsy+TS-8,Math.round((TS-4)*pct),6);
+    // bar border
+    ctx.strokeStyle="rgba(255,255,255,.3)";ctx.lineWidth=.5;
+    ctx.strokeRect(bsx+2,bsy+TS-8,TS-4,6);
+    // ⛏ icon above bar
+    ctx.font="9px monospace";ctx.fillStyle="#fff";ctx.textAlign="center";
+    ctx.fillText("⛏",bsx+TS/2,bsy+TS-10);
+    ctx.textAlign="left";
+  }
+
+  // Lava glow animation
+  for(let ty2=0;ty2<VH;ty2++) for(let tx2=0;tx2<VW;tx2++){
+    const mx2=camX+tx2,my2=camY+ty2;
+    if(mx2<0||mx2>=COLS||my2<0||my2>=ROWS) continue;
+    if(map[my2][mx2]===LAVA){
+      const flicker=0.35+0.25*Math.sin(tick*.08+mx2*.4);
+      ctx.fillStyle=`rgba(255,80,0,${flicker})`;
+      ctx.fillRect(tx2*TS,ty2*TS,TS,TS);
+    }
+    if(map[my2][mx2]===BOSSFLOOR){
+      ctx.fillStyle="rgba(60,0,0,0.22)";
+      ctx.fillRect(tx2*TS,ty2*TS,TS,TS);
+    }
+  }
+
+  // Boss entity
+  if(boss.alive&&boss.spawned){
+    const bsx2=(boss.x-camX)*TS,bsy2=(boss.y-camY)*TS;
+    boss.anim=(boss.anim+1)||0;
+    const pulse=Math.sin(boss.anim*.07)*3;
+    const bossCol=boss.enraged?"#ff2200":"#cc0044";
+    const glowCol=boss.enraged?"#ff6600":"#ff0066";
+    ctx.shadowColor=glowCol; ctx.shadowBlur=16+pulse;
+    ctx.fillStyle=bossCol;
+    ctx.fillRect(bsx2-2,bsy2-2,TS+4,TS+4);
+    ctx.shadowBlur=0;
+    // eyes
+    ctx.fillStyle="#000";
+    ctx.fillRect(bsx2+4,bsy2+6,5,5);
+    ctx.fillRect(bsx2+TS-9,bsy2+6,5,5);
+    ctx.fillStyle=boss.enraged?"#ffff00":"#ff4400";
+    ctx.beginPath();ctx.arc(bsx2+6,bsy2+8,2,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(bsx2+TS-7,bsy2+8,2,0,Math.PI*2);ctx.fill();
+    // mouth
+    ctx.fillStyle="#000";ctx.fillRect(bsx2+5,bsy2+TS-9,TS-10,4);
+    ctx.fillStyle=boss.enraged?"#ff6600":"#cc2200";
+    for(let i=0;i<4;i++){
+      ctx.beginPath();ctx.moveTo(bsx2+5+i*4,bsy2+TS-9);
+      ctx.lineTo(bsx2+7+i*4,bsy2+TS-5);
+      ctx.lineTo(bsx2+9+i*4,bsy2+TS-9);ctx.fill();
+    }
+    // crown spikes
+    ctx.fillStyle=boss.enraged?"#ff8800":"#880022";
+    for(let i=0;i<5;i++){
+      ctx.beginPath();ctx.moveTo(bsx2+3+i*5,bsy2+2);
+      ctx.lineTo(bsx2+5+i*5,bsy2-6-pulse);
+      ctx.lineTo(bsx2+7+i*5,bsy2+2);ctx.fill();
+    }
+    // label
+    ctx.font="bold 8px monospace";ctx.textAlign="center";
+    ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(bsx2-12,bsy2-19,TS+24,12);
+    ctx.fillStyle=boss.enraged?"#ff8800":"#ff3366";
+    ctx.fillText(boss.enraged?"👹 DEEP ONE ★":"👹 DEEP ONE",bsx2+TS/2,bsy2-9);
+    ctx.textAlign="left";
+
+    // Boss HP bar (top of screen)
+    const bhbx=10,bhby=10,bhbw=VW*TS-20,bhbh=11;
+    ctx.fillStyle="rgba(0,0,0,.8)";ctx.fillRect(bhbx-2,bhby-2,bhbw+4,bhbh+16);
+    ctx.fillStyle="#1a0000";ctx.fillRect(bhbx,bhby,bhbw,bhbh);
+    const bpct=boss.hp/boss.maxHp;
+    const bhcol=bpct>0.5?"#cc0033":bpct>0.25?"#ff5500":"#ff0000";
+    const bhg=ctx.createLinearGradient(bhbx,0,bhbx+bhbw*bpct,0);
+    bhg.addColorStop(0,bhcol+"88");bhg.addColorStop(1,bhcol);
+    ctx.fillStyle=bhg;ctx.fillRect(bhbx,bhby,Math.max(2,bhbw*bpct),bhbh);
+    ctx.fillStyle="rgba(255,255,255,.07)";ctx.fillRect(bhbx,bhby,bhbw*bpct,bhbh/2);
+    ctx.strokeStyle="#440000";ctx.lineWidth=1;ctx.strokeRect(bhbx,bhby,bhbw,bhbh);
+    ctx.font="bold 8px monospace";ctx.textAlign="center";ctx.fillStyle="#ff8899";
+    ctx.fillText(`👹 THE DEEP ONE  ❤ ${boss.hp} / ${boss.maxHp}`,VW*TS/2,bhby+bhbh+10);
+    ctx.textAlign="left";
+
+    // "SPACE to attack" hint
+    const adj=Math.abs(boss.x-px)<=1&&Math.abs(boss.y-py)<=1;
+    if(adj){
+      ctx.fillStyle="rgba(0,0,0,.7)";ctx.fillRect(VW*TS/2-54,VH*TS/2-20,108,16);
+      ctx.fillStyle="#ffff44";ctx.font="bold 9px monospace";ctx.textAlign="center";
+      ctx.fillText("⚔ SPACE to strike!",VW*TS/2,VH*TS/2-7);ctx.textAlign="left";
+    }
+  }
+
+  // Win screen
+  if(won){
+    ctx.fillStyle="rgba(0,0,0,.92)";ctx.fillRect(0,0,VW*TS,VH*TS);
+    const sh=0.6+0.4*Math.sin(tick*.05);
+    ctx.shadowColor=`rgba(255,215,0,${sh})`;ctx.shadowBlur=40;
+    ctx.fillStyle="#ffd700";ctx.font="bold 28px monospace";ctx.textAlign="center";
+    ctx.fillText("⚔  VICTORY!  ⚔",VW*TS/2,VH*TS/2-54);ctx.shadowBlur=0;
+    ctx.fillStyle="#ff6688";ctx.font="bold 13px monospace";
+    ctx.fillText("The Deep One has been slain!",VW*TS/2,VH*TS/2-26);
+    ctx.fillStyle="#ffeeaa";ctx.font="11px monospace";
+    ctx.fillText("You claimed the legendary SOUL GEM.",VW*TS/2,VH*TS/2+0);
+    ctx.fillStyle="#00ffcc";ctx.font="bold 13px monospace";
+    ctx.fillText("💰 +$10,000 Treasure!",VW*TS/2,VH*TS/2+24);
+    ctx.fillStyle="#556";ctx.font="10px monospace";
+    ctx.fillText("Press R to play again",VW*TS/2,VH*TS/2+52);
+    ctx.textAlign="left";
+  }
+
+  if(py>=SURF&&!won){
+    const vr=visionR();
+    for(let ty=0;ty<VH;ty++){
+      for(let tx=0;tx<VW;tx++){
+        const mx=camX+tx,my=camY+ty;
+        const dx=Math.abs(mx-px),dy=Math.abs(my-py);
+        if(dx>vr||dy>vr){
+          ctx.fillStyle="rgba(4,6,14,0.88)";
+          ctx.fillRect(tx*TS,ty*TS,TS,TS);
+        }
+      }
+    }
+  }
+
+  // Depth bar
+  const depth=Math.max(0,py-SURF),maxD=ROWS-SURF,barH=VH*TS-20;
+  ctx.fillStyle="rgba(0,0,0,.5)";ctx.fillRect(VW*TS-10,9,7,barH);
+  ctx.fillStyle="#0d0d22";ctx.fillRect(VW*TS-9,10,5,barH-2);
+  const dg=ctx.createLinearGradient(0,10,0,10+barH);
+  dg.addColorStop(0,"#4488ff");dg.addColorStop(.4,"#cc44ff");
+  dg.addColorStop(.7,"#ff8800");dg.addColorStop(1,"#00ffee");
+  ctx.fillStyle=dg;ctx.fillRect(VW*TS-9,10,5,(barH-2)*(depth/maxD));
+  ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(VW*TS-56,VH*TS-18,48,14);
+  ctx.fillStyle="#556";ctx.font="9px monospace";
+  ctx.fillText(`D:${depth}m`,VW*TS-54,VH*TS-7);
+
+  // ── Energy bar on canvas ──────────────────────────────────────────────────
+  const bx=8,by=VH*TS-22,bw=VW*TS-30,bh=10;
+  const epct=energy/maxEnergy;
+  const ecol=energy>60?"#2266ff":energy>30?"#ff8800":"#ff2200";
+  // Background
+  ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(bx-2,by-2,bw+4,bh+4);
+  ctx.fillStyle="#080818";ctx.fillRect(bx,by,bw,bh);
+  // Fill
+  if(epct>0){
+    const eg=ctx.createLinearGradient(bx,0,bx+bw*epct,0);
+    eg.addColorStop(0,ecol+"99");eg.addColorStop(1,ecol);
+    ctx.fillStyle=eg;ctx.fillRect(bx,by,Math.max(2,bw*epct),bh);
+    // Shine
+    ctx.fillStyle="rgba(255,255,255,.08)";ctx.fillRect(bx,by,bw*epct,bh/2);
+  }
+  // Border
+  ctx.strokeStyle=energy>60?"#1144aa":energy>30?"#aa5500":"#880000";
+  ctx.lineWidth=1;ctx.strokeRect(bx,by,bw,bh);
+  // Resting pulse highlight
+  if(resting){
+    ctx.strokeStyle="rgba(34,255,102,.4)";ctx.lineWidth=1.5;
+    ctx.strokeRect(bx-1,by-1,bw+2,bh+2);
+  }
+  // Label
+  ctx.fillStyle=energy>60?"#4488ff":energy>30?"#ff8800":"#ff2200";
+  ctx.font="bold 8px monospace";
+  const elabel=resting?`⚡ ${Math.ceil(energy)}/${maxEnergy}  💤 Resting`:`⚡ ${Math.ceil(energy)} / ${maxEnergy}`;
+  ctx.fillText(elabel,bx+3,by+bh-2);
+
+  // Messages
+  ctx.textAlign="left";
+  for(let i=0;i<msgs.length;i++){
+    const m=msgs[i],a=Math.min(1,m.t/55);
+    ctx.globalAlpha=a*.9;ctx.fillStyle="rgba(0,0,0,.6)";ctx.fillRect(4,VH*TS-84+i*16-1,280,13);
+    ctx.globalAlpha=a;ctx.fillStyle=m.color;ctx.font="bold 10px monospace";
+    ctx.fillText(m.text,6,VH*TS-73+i*16);ctx.globalAlpha=1;
+  }
+
+  // Death screen
+  if(dead){
+    ctx.fillStyle="rgba(0,0,0,.88)";ctx.fillRect(0,0,VW*TS,VH*TS);
+    ctx.shadowColor="#ff0000";ctx.shadowBlur=28;
+    ctx.fillStyle="#cc1111";ctx.font="bold 38px monospace";ctx.textAlign="center";
+    ctx.fillText("YOU DIED",VW*TS/2,VH*TS/2-34);ctx.shadowBlur=0;
+    ctx.fillStyle="#444";ctx.font="12px monospace";
+    ctx.fillText("Lost all money & inventory",VW*TS/2,VH*TS/2-4);
+    ctx.fillStyle="#33aa66";ctx.font="11px monospace";
+    ctx.fillText("✓ Upgrades & drill preserved",VW*TS/2,VH*TS/2+18);
+    ctx.fillStyle="#fff";ctx.font="bold 13px monospace";
+    ctx.fillText("[ R ] Respawn",VW*TS/2,VH*TS/2+48);
+    ctx.textAlign="left";
+  }
+}
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+function blockHardness(t){
+  // ticks at drill lv 0; each drill level cuts by 13%
+  const base=ORES[t]?Math.round(ORES[t].e*2.5):t===DIRT?18:38;
+  return Math.max(4,Math.round(base*(1-upgrades.drillLv*.13)));
+}
+
+function update(){
+  tick++;
+  msgs=msgs.map(m=>({...m,t:m.t-1})).filter(m=>m.t>0);
+  particles=particles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.life--;return p.life>0;});
+
+  if(dead||won) return;
+
+  const tile=map[py][px];
+  resting=(tile===REST);
+  nearSell=(tile===SELL);
+  const wasNearShop=nearShop;
+  nearShop=(tile===SHOP);
+
+  if(nearShop&&!wasNearShop){ shopOpen=true; openShop(); }
+  if(!nearShop&&wasNearShop){ shopOpen=false; closeShop(); }
+
+  if(resting&&energy<maxEnergy) energy=Math.min(maxEnergy,energy+.9+upgrades.regenLv*.6);
+  if(map[py][px]===LAVA&&tick%60===0){
+    hp=Math.max(0,hp-1);
+    addMsg("🔥 Lava! -1 HP","#ff4400");
+    if(hp<=0){dead=true;addMsg("💀 YOU DIED — Press R","#ff2222");}
+  }
+  if(energy<=0){
+    energy=0;
+    if(tick%80===0){
+      hp=Math.max(0,hp-1);
+      if(hp<=0){dead=true;addMsg("💀 YOU DIED — Press R","#ff2222");}
+      else addMsg("⚠ Exhausted! -1 HP","#ff4444");
+    }
+  }
+
+  // ── Boss logic ────────────────────────────────────────────────────────────
+  playerAttackCd=Math.max(0,playerAttackCd-1);
+  if(!won){
+    // Spawn boss when player enters arena
+    if(!boss.spawned&&py>=BOSS_ROOM_Y){
+      boss.spawned=true;boss.x=Math.floor(COLS/2);boss.y=BOSS_ROOM_Y+4;
+      addMsg("👹 THE DEEP ONE AWAKENS!","#ff2244");
+      addMsg("Get close and hold SPACE to attack!","#ffdd44");
+    }
+    if(boss.alive&&boss.spawned){
+      boss.enraged=boss.hp<=boss.maxHp/2;
+      const speed=boss.enraged?35:55;
+      boss.moveCd=Math.max(0,boss.moveCd-1);
+      if(boss.moveCd===0){
+        // Move toward player
+        const ddx=px-boss.x,ddy=py-boss.y;
+        const primary=Math.abs(ddx)>=Math.abs(ddy);
+        let bmdx=primary?(ddx>0?1:-1):0;
+        let bmdy=primary?0:(ddy>0?1:-1);
+        const bnx=boss.x+bmdx,bny=boss.y+bmdy;
+        const bnt=map[bny]?.[bnx];
+        const canMove=bnx>=2&&bnx<COLS-2&&bny>=BOSS_ROOM_Y&&bny<ROWS-1
+          &&(bnt===BOSSFLOOR||bnt===AIR)&&!(bnx===px&&bny===py);
+        if(canMove){boss.x=bnx;boss.y=bny;}
+        boss.moveCd=speed;
+      }
+      // Boss attacks player when adjacent
+      boss.attackCd=Math.max(0,boss.attackCd-1);
+      if(boss.attackCd===0&&Math.abs(boss.x-px)<=1&&Math.abs(boss.y-py)<=1){
+        hp=Math.max(0,hp-1);
+        addMsg(boss.enraged?"💥 Deep One RAGES! -1 HP":"💥 Deep One attacks! -1 HP","#ff4444");
+        if(hp<=0){dead=true;addMsg("💀 YOU DIED — Press R","#ff2222");}
+        boss.attackCd=boss.enraged?55:90;
+      }
+      // Player attacks boss (SPACE when adjacent)
+      const adjBoss=Math.abs(boss.x-px)<=1&&Math.abs(boss.y-py)<=1;
+      const facingBoss=(px+faceDx===boss.x&&py+faceDy===boss.y)
+        ||(Math.abs(boss.x-px)<=1&&Math.abs(boss.y-py)<=1);
+      if(keys[' ']&&adjBoss&&facingBoss&&playerAttackCd===0){
+        const dmg=12+upgrades.drillLv*6;
+        boss.hp=Math.max(0,boss.hp-dmg);
+        spawnParticles(boss.x,boss.y,"#ff2244",5);
+        addMsg(`⚔ Hit! -${dmg} HP (${boss.hp} left)`,boss.enraged?"#ff8800":"#ff4466");
+        playerAttackCd=12;
+        if(boss.hp<=0){
+          boss.alive=false;won=true;money+=10000;
+          addMsg("🏆 VICTORY! The Deep One is defeated!","#ffd700");
+          addMsg("💎 SOUL GEM claimed! +$10,000!","#00ffcc");
+        }
+        mineProgress=0;mineX=-1;mineY=-1;
+      }
+    }
+  }
+  moveCd=Math.max(0,moveCd-1);
+  let mdx=0,mdy=0;
+  if(keys['arrowleft']||keys['a']) mdx=-1;
+  else if(keys['arrowright']||keys['d']) mdx=1;
+  else if(keys['arrowup']||keys['w']) mdy=-1;
+  else if(keys['arrowdown']||keys['s']) mdy=1;
+
+  if((mdx||mdy) && moveCd===0){
+    faceDx=mdx; faceDy=mdy;  // update facing whenever a direction key is held
+    const nx=px+mdx,ny=py+mdy;
+    if(nx>=0&&nx<COLS&&ny>=0&&ny<ROWS){
+      const t=map[ny][nx];
+      const wCap=weightCap(),excess=Math.max(0,weight-wCap);
+      if(t===AIR||t===GRASS||t===REST||t===SHOP||t===SELL||t===BOSSFLOOR||t===LAVA){
+        px=nx;py=ny;
+        energy=Math.max(0,energy-(0.2+excess*.07));
+        moveCd=5;
+        // cancel mine if we moved
+        mineProgress=0;mineX=-1;mineY=-1;
+      }
+      // if solid — just update facing, don't move; spacebar mines
+    }
+  }
+
+  // ── Mining (SPACE held) ───────────────────────────────────────────────────
+  const tx=px+faceDx, ty_=py+faceDy;
+  const isMining=keys[' ']&&!dead;
+
+  if(isMining && tx>=0&&tx<COLS&&ty_>=0&&ty_<ROWS){
+    const bt=map[ty_][tx];
+    if(bt===DIRT||bt===STONE||ORES[bt]){
+      const wCap=weightCap(),excess=Math.max(0,weight-wCap);
+      const energyCost=(ORES[bt]?ORES[bt].e:(bt===DIRT?1.5:3.5))*(1-upgrades.drillLv*.13)+excess*.06;
+      if(energy<energyCost){
+        addMsg("Not enough energy!","#ff8866");
+        mineProgress=0;mineX=-1;mineY=-1;
+      } else {
+        // reset progress if target changed
+        if(mineX!==tx||mineY!==ty_){
+          mineProgress=0;
+          mineMax=blockHardness(bt);
+          mineX=tx;mineY=ty_;
+        }
+        mineProgress++;
+        // Drain a fraction of energy per tick
+        energy=Math.max(0,energy-energyCost/mineMax);
+
+        if(mineProgress>=mineMax){
+          // Break block
+          map[ty_][tx]=AIR;
+          mineProgress=0;mineX=-1;mineY=-1;
+          if(ORES[bt]){
+            const o=ORES[bt];
+            inv[bt]=(inv[bt]||0)+1;weight+=o.w;
+            spawnParticles(tx,ty_,o.hi,6);
+            addMsg(`⛏ +${o.n}  ($${o.v}, ${o.w}wt)`,o.hi);
+            if(o.mat) drillMats[o.mat]=(drillMats[o.mat]||0)+1;
+          } else spawnParticles(tx,ty_,bt===DIRT?"#a06030":"#888",3);
+        }
+      }
+    } else {
+      mineProgress=0;mineX=-1;mineY=-1;
+    }
+  } else {
+    // Space released or no valid target — reset progress
+    mineProgress=0;mineX=-1;mineY=-1;
+  }
+}
+
+// ─── Shop open/close ──────────────────────────────────────────────────────────
+function openShop(){
+  const sc=document.getElementById('shop-col');
+  sc.style.display="flex";sc.style.flexDirection="column";
+  document.getElementById('price-list').innerHTML="";
+  buildShop();
+}
+function closeShop(){
+  document.getElementById('shop-col').style.display="none";
+}
+
+// Just update button can/can't classes without rebuilding DOM
+function buildShopPrices(){
+  const costMap={bag:[15,40,100,250],cap:[12,35,80,200],regen:[18,50,120,300],lantern:[20,60,160,400,900]};
+  const lkMap={bag:"bagLv",cap:"capLv",regen:"regenLv",lantern:"lanternLv"};
+  for(const[k,costs] of Object.entries(costMap)){
+    const lv=upgrades[lkMap[k]];
+    const btn=document.getElementById('upg-btn-'+k);
+    if(!btn) continue;
+    const cost=lv<costs.length?costs[lv]:null;
+    if(cost){
+      btn.textContent='$'+cost.toLocaleString();
+      btn.className='btn-buy'+(money>=cost?' can':'');
+    }
+  }
+}
+
+// ─── HUD ──────────────────────────────────────────────────────────────────────
+function updateHUD(){
+  let h="";
+  for(let i=0;i<maxHp;i++) h+=`<span style="font-size:13px">${i<hp?"❤️":"🖤"}</span>`;
+  document.getElementById('hp-row').innerHTML=h;
+
+  const pct=(energy/maxEnergy)*100,ec=energy>60?"#2266ff":energy>30?"#ff8800":"#ff2200";
+  const eb=document.getElementById('e-bar');
+  eb.style.width=pct+"%";eb.style.background=ec;eb.style.boxShadow=`0 0 5px ${ec}`;
+  document.getElementById('e-icon').textContent=resting?"💤":"⚡";
+  document.getElementById('e-icon').style.color=resting?"#22ff66":"#5599ff";
+  document.getElementById('e-lbl').textContent=`${Math.ceil(energy)}/${maxEnergy}`;
+  document.getElementById('money-lbl').textContent=`💰 $${money.toLocaleString()}`;
+
+  const wCap=weightCap(),over=weight>wCap,depth=Math.max(0,py-SURF);
+  document.getElementById('stats-row').innerHTML=
+    `<span style="color:#00ffcc">⛏ ${DRILL_NAMES[upgrades.drillLv]}</span>`+
+    ` <span style="color:#111128">│</span> <span style="color:#2a2a44">📍${depth}m</span>`+
+    ` <span style="color:#111128">│</span> <span style="color:${over?"#ff8844":"#2a2a44"}">${weight}/${wCap}wt</span>`+
+    ` <span style="color:#111128">│</span> <span style="color:#664422">🔦${visionR()}blk</span>`;
+
+  const zm=document.getElementById('zone-msg');
+  if(resting){zm.style.display="block";zm.style.color="#22dd66";zm.textContent="💤 Resting — energy regen";}
+  else if(nearSell){zm.style.display="block";zm.style.color="#22aaff";zm.textContent="💲 Sell counter — press F to sell all";}
+  else if(nearShop){zm.style.display="block";zm.style.color="#ffaa00";zm.textContent="🛒 Shop open — walk away to close";}
+  else if(over){zm.style.display="block";zm.style.color="#ff8844";zm.textContent="⚠ Overloaded!";}
+  else zm.style.display="none";
+
+  // Inventory
+  const ie=Object.entries(inv).filter(([,c])=>c>0);
+  const iv=ie.reduce((s,[t,c])=>s+(ORES[t]?.v||0)*c,0);
+  document.getElementById('inv-list').innerHTML=ie.length
+    ?ie.map(([t,c])=>{const o=ORES[t];if(!o)return"";
+      return`<div class="ore-row" style="border-left:2px solid ${o.hi}">
+        <span style="color:${o.hi}">■ ${o.n}</span>
+        <span style="color:#1a1a38">×${c}</span>
+        <span style="color:#8a6818">$${o.v*c}</span></div>`;}).join("")
+    :'<div style="color:#0f0f28;font-size:10px;font-style:italic;">Nothing yet...</div>';
+
+  const footer=document.getElementById('inv-footer');
+  if(ie.length){
+    footer.style.display="block";
+    document.getElementById('inv-total').textContent=`$${iv}`;
+    document.getElementById('sell-btn').textContent=`💲 Sell All ($${iv})`;
+  } else footer.style.display="none";
+
+  document.getElementById('mat-list').innerHTML=
+    Object.entries(drillMats).map(([k,v])=>
+      `<div class="mat-row"><span style="text-transform:capitalize;color:#2a2a44">${k}</span>
+       <span style="color:${v>0?"#4455aa":"#0f0f28"}">${v}</span></div>`).join("");
+
+  if(shopOpen) buildShopPrices();
+}
+
+function buildShop(){
+  const upgCfg=[
+    {k:"bag",    icon:"🎒",lbl:"Backpack",   desc:"+5 weight cap",  costs:[15,40,100,250]},
+    {k:"cap",    icon:"⚡",lbl:"Energy Tank",desc:"+20 max energy", costs:[12,35,80,200]},
+    {k:"regen",  icon:"💤",lbl:"Rest Speed", desc:"+0.5 regen/tick",costs:[18,50,120,300]},
+    {k:"lantern",icon:"🔦",lbl:"Lantern",    desc:"+2 block vision",costs:[20,60,160,400,900]},
+  ];
+  const lkMap={bag:"bagLv",cap:"capLv",regen:"regenLv",lantern:"lanternLv"};
+  document.getElementById('shop-upgs').innerHTML=upgCfg.map(({k,icon,lbl,desc,costs})=>{
+    const lk=lkMap[k],ml=costs.length,lv=upgrades[lk],cost=lv<ml?costs[lv]:null,can=cost&&money>=cost;
+    const pips=Array.from({length:ml},(_,i)=>`<span class="pip" style="width:16px;background:${i<lv?"#4433ee":"#0c0c28"}"></span>`).join("");
+    const btn=cost
+      ?`<button id="upg-btn-${k}" class="btn-buy${can?" can":""}" onclick="buyUpg('${k}')">$${cost.toLocaleString()}</button>`
+      :`<div style="color:#0c0c28;text-align:center;font-size:10px;padding:3px 0">— MAX —</div>`;
+    return`<div class="upg-block">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+        <span style="color:#99a;font-size:11px">${icon} ${lbl}</span>
+        <span style="color:#181838;font-size:9px">Lv ${lv}/${ml}</span></div>
+      <div style="color:#182030;font-size:9px;margin-bottom:4px">${desc}</div>
+      <div style="display:flex;gap:2px;margin-bottom:4px">${pips}</div>${btn}</div>`;
+  }).join("");
+
+  const dlv=upgrades.drillLv;
+  const dpips=Array.from({length:5},(_,i)=>`<span class="pip" style="width:20px;height:5px;background:${i<=dlv?"#00ccaa":"#091c18"}"></span>`).join("");
+  let req="",craft="";
+  if(dlv<4){
+    const r=DRILL_REQS[dlv+1];
+    const ok=Object.entries(r).every(([k,n])=>(drillMats[k]||0)>=n);
+    req='<div style="font-size:9px;color:#182030;margin-bottom:4px">Materials needed:</div>'+
+      Object.entries(r).map(([mat,n])=>{const have=drillMats[mat]||0;
+        return`<div class="mat-row" style="color:${have>=n?"#44cc88":"#cc4422"}">
+          <span style="text-transform:capitalize">${mat}</span><span>${have}/${n}</span></div>`;}).join("");
+    craft=`<button class="btn-craft${ok?" can":""}" style="margin-top:7px" onclick="craftDrill()">
+      Craft → ${DRILL_NAMES[dlv+1]}</button>`;
+  } else {
+    craft=`<div style="color:#091c18;text-align:center;font-size:10px;padding:5px 0">— MAX LEVEL —</div>`;
+  }
+  document.getElementById('drill-craft').innerHTML=`
+    <div style="border-top:1px solid #0d0d20;padding-top:9px;margin-top:2px">
+      <div style="color:#00ffcc;font-size:12px;font-weight:bold;margin-bottom:6px">⛏ Drill Upgrade</div>
+      <div style="color:#2a3a44;font-size:10px;margin-bottom:3px">Current: <span style="color:#00ffcc">${DRILL_NAMES[dlv]}</span></div>
+      <div style="display:flex;gap:2px;margin-bottom:7px">${dpips}</div>${req}${craft}</div>`;
+
+  const pl=document.getElementById('price-list');
+  if(!pl.innerHTML){
+    pl.innerHTML=Object.values(ORES).map(o=>
+      `<div style="display:flex;justify-content:space-between;align-items:center;font-size:9px;margin-bottom:2px">
+        <span style="color:${o.hi}">■ ${o.n}</span>
+        <span style="color:#1a1a38">${o.w}wt</span>
+        <span style="color:#7a5818">$${o.v}</span></div>`).join("");
+  }
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+window.sellAll=function(){
+  const ie=Object.entries(inv).filter(([,c])=>c>0);
+  if(!ie.length){addMsg("Nothing to sell!","#445");return;}
+  let tot=0;
+  ie.forEach(([t,c])=>{if(ORES[t])tot+=ORES[t].v*c;});
+  money+=tot;inv={};weight=0;
+  addMsg(`💰 Sold for $${tot.toLocaleString()}!`,"#ffd700");
+};
+
+window.buyUpg=function(k){
+  const lkMap={bag:"bagLv",cap:"capLv",regen:"regenLv",lantern:"lanternLv"};
+  const costMap={bag:[15,40,100,250],cap:[12,35,80,200],regen:[18,50,120,300],lantern:[20,60,160,400,900]};
+  const lk=lkMap[k],costs=costMap[k],lv=upgrades[lk];
+  if(lv>=costs.length){addMsg("Already maxed!","#666");return;}
+  const cost=costs[lv];
+  if(money<cost){addMsg(`Need $${cost}!`,"#ff8866");return;}
+  money-=cost;upgrades[lk]++;
+  if(k==="cap") maxEnergy=100+upgrades.capLv*20;
+  addMsg("✓ Upgrade purchased!","#88ffaa");
+  if(shopOpen) buildShop();
+};
+
+window.craftDrill=function(){
+  const lv=upgrades.drillLv;
+  if(lv>=4){addMsg("Max drill!","#666");return;}
+  const req=DRILL_REQS[lv+1];
+  if(!Object.entries(req).every(([k,n])=>(drillMats[k]||0)>=n)){addMsg("Missing materials!","#ff8866");return;}
+  Object.entries(req).forEach(([k,n])=>{drillMats[k]-=n;});
+  upgrades.drillLv++;
+  addMsg(`⛏ Drill → ${DRILL_NAMES[upgrades.drillLv]}!`,"#00ffcc");
+  if(shopOpen) buildShop();
+};
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+window.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  keys[k]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if(k==='r'&&(dead||won)){
+    energy=maxEnergy;hp=maxHp;money=0;inv={};weight=0;dead=false;won=false;
+    px=Math.floor(COLS/2);py=3;
+    boss={x:Math.floor(COLS/2),y:BOSS_ROOM_Y+4,hp:60,maxHp:60,
+      alive:true,spawned:false,moveCd:0,attackCd:0,anim:0,enraged:false,dx:1,dy:0};
+    msgs=[{text:"Respawned! Map & upgrades preserved.",color:"#88ff88",t:220}];
+  }
+  if(k==='f'&&nearSell) sellAll();
+  if(k==='e'){ shopOpen=!shopOpen; shopOpen?openShop():closeShop(); }
+});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+
+// ─── Loop ─────────────────────────────────────────────────────────────────────
+let lastHud=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  update();draw();
+  if(t-lastHud>66){lastHud=t;updateHUD();}
+}
+updateHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
